@@ -1,0 +1,16 @@
+# templates/notifications/email_notification.txt
+{{ site_name }} - {{ notification.title }}
+
+Bonjour {{ user.first_name|default:user.username }},
+
+{{ notification.message }}
+
+{% if notification.action_text %}
+{{ notification.action_text }} : {{ site_url }}{{ notification.action_url }}
+{% endif %}
+
+---
+Si vous ne souhaitez plus recevoir ces notifications, vous pouvez les désactiver dans les paramètres de notification.
+{{ site_url }}/settings/notifications
+
+© {{ site_name }} {% now "Y" %}. Tous droits réservés.

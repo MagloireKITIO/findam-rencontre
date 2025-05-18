@@ -1,0 +1,90 @@
+# templates/notifications/email_notification.html
+
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ notification.title }}</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            margin: 0;
+            padding: 0;
+            background-color: #f5f5f5;
+        }
+        .container {
+            max-width: 600px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #ffffff;
+            border-radius: 5px;
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+        }
+        .header {
+            text-align: center;
+            padding-bottom: 20px;
+            border-bottom: 1px solid #eee;
+            margin-bottom: 20px;
+        }
+        .logo {
+            max-width: 150px;
+            margin-bottom: 15px;
+        }
+        .content {
+            padding: 20px 0;
+        }
+        .button {
+            display: inline-block;
+            background-color: #5D1EF8;
+            color: white;
+            text-decoration: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            margin-top: 20px;
+        }
+        .footer {
+            margin-top: 30px;
+            text-align: center;
+            font-size: 12px;
+            color: #999;
+            border-top: 1px solid #eee;
+            padding-top: 20px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <img src="{{ site_url }}/static/img/logo.png" alt="{{ site_name }}" class="logo">
+            <h2>{{ notification.title }}</h2>
+        </div>
+        
+        <div class="content">
+            <p>Bonjour {{ user.first_name|default:user.username }},</p>
+            
+            <p>{{ notification.message }}</p>
+            
+            {% if notification.action_url and notification.action_text %}
+            <p>
+                <a href="{{ site_url }}{{ notification.action_url }}" class="button">
+                    {{ notification.action_text }}
+                </a>
+            </p>
+            {% endif %}
+        </div>
+        
+        <div class="footer">
+            <p>&copy; {{ site_name }} {% now "Y" %}. Tous droits réservés.</p>
+            <p>
+                <small>
+                    Si vous ne souhaitez plus recevoir ces notifications, vous pouvez les désactiver dans les 
+                    <a href="{{ site_url }}/settings/notifications">paramètres de notification</a>.
+                </small>
+            </p>
+        </div>
+    </div>
+</body>
+</html>
