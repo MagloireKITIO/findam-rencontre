@@ -110,7 +110,6 @@ class RegisterSerializer(serializers.ModelSerializer):
     def create(self, validated_data):
         validated_data.pop('password2')
         user = User.objects.create_user(**validated_data)
-        UserProfile.objects.create(user=user)
         return user
 
 class PhoneVerificationSerializer(serializers.Serializer):
