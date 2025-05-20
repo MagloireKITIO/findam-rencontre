@@ -39,6 +39,14 @@ class UserSerializer(serializers.ModelSerializer):
                  'profile', 'photos', 'last_active')
         read_only_fields = ('id', 'is_premium', 'premium_until', 'is_verified', 
                            'last_active')
+        # Ajouter des messages d'erreur explicites
+        extra_kwargs = {
+            'first_name': {'error_messages': {'required': 'Le prénom est requis'}},
+            'last_name': {'error_messages': {'required': 'Le nom est requis'}},
+            'date_of_birth': {'error_messages': {'required': 'La date de naissance est requise', 'invalid': 'Format de date invalide'}},
+            'gender': {'error_messages': {'required': 'Le genre est requis'}},
+            'seeking': {'error_messages': {'required': 'Veuillez indiquer ce que vous recherchez'}}
+        }
     
     def get_age(self, obj):
         return obj.get_age()
@@ -93,6 +101,19 @@ class UserSerializer(serializers.ModelSerializer):
         if is_complete != user.is_complete:
             user.is_complete = is_complete
             user.save(update_fields=['is_complete'])
+    
+    def validate_date_of_birth(self, value):
+        """Valider la date de naissance (doit être au moins 18 ans)"""
+        if not value:
+            return value
+        
+        from datetime import date, timedelta
+        min_birth_date = date.today() - timedelta(days=18*365)
+        
+        if value > min_birth_date:
+            raise serializers.ValidationError("Vous devez avoir au moins 18 ans pour utiliser cette application.")
+        
+        return value
 
 class RegisterSerializer(serializers.ModelSerializer):
     password = serializers.CharField(write_only=True, required=True, validators=[validate_password])

@@ -1,5 +1,6 @@
 # accounts/views.py
 
+import logging
 from django.contrib.auth import get_user_model
 from django.utils import timezone
 import requests
@@ -22,6 +23,7 @@ from .serializers import (
     UserPhotoSerializer
 )
 
+logger = logging.getLogger(__name__)
 User = get_user_model()
 
 class UserViewSet(viewsets.ModelViewSet):
@@ -41,10 +43,35 @@ class UserViewSet(viewsets.ModelViewSet):
             return [AllowAny()]
         return super().get_permissions()
     
-    @action(detail=False, methods=['get'])
+    @action(detail=False, methods=['get', 'put', 'patch'])
     def me(self, request):
-        serializer = self.get_serializer(request.user)
-        return Response(serializer.data)
+        """Récupérer ou mettre à jour les informations de l'utilisateur connecté"""
+        user = request.user
+        
+        if request.method == 'GET':
+            serializer = self.get_serializer(user)
+            return Response(serializer.data)
+        
+        elif request.method in ['PUT', 'PATCH']:
+            partial = request.method == 'PATCH'
+            
+            # Ajouter des logs pour déboguer
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.info(f"Données reçues: {request.data}")
+            
+            serializer = self.get_serializer(user, data=request.data, partial=partial)
+            
+            # Vérifier si les données sont valides et logger les erreurs
+            if not serializer.is_valid():
+                logger.error(f"Erreurs de validation: {serializer.errors}")
+                return Response(serializer.errors, status=400)
+            
+            serializer.save()
+            
+            return Response(serializer.data)
+        
+       
     
     @action(detail=False, methods=['post'], permission_classes=[IsAuthenticated])
     def update_location(self, request):
