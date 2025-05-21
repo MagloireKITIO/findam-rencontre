@@ -175,6 +175,22 @@ class UserPreferenceViewSet(viewsets.ModelViewSet):
         # Obtenir ou créer les préférences de l'utilisateur
         obj, created = UserPreference.objects.get_or_create(user=self.request.user)
         return obj
+    
+    @action(detail=False, methods=['get'])
+    def current(self, request):
+        """Récupérer les préférences de l'utilisateur actuel"""
+        instance = self.get_object()
+        serializer = self.get_serializer(instance)
+        return Response(serializer.data)
+    
+    @action(detail=False, methods=['put', 'patch'])
+    def update_preferences(self, request):
+        """Mettre à jour les préférences de l'utilisateur actuel"""
+        instance = self.get_object()
+        serializer = self.get_serializer(instance, data=request.data, partial=request.method == 'PATCH')
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response(serializer.data)
 
 class SwipeViewSet(viewsets.ModelViewSet):
     """API pour gérer les actions de swipe"""
