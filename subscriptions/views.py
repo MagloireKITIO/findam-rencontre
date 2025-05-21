@@ -1,11 +1,12 @@
 # subscriptions/views.py
 
 import json
+import logging
 from django.db.models import Q
 from django.utils import timezone
 from django.shortcuts import get_object_or_404
 from django.http import HttpResponse
-from rest_framework import viewsets, generics, status, permissions
+from rest_framework import viewsets, generics, status, permissions,serializers
 from rest_framework.decorators import api_view, permission_classes, action
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated, IsAdminUser, AllowAny
@@ -19,6 +20,8 @@ from .serializers import (
     VerifyPaymentSerializer, CancelSubscriptionSerializer
 )
 from .services import NotchPayService
+
+logger = logging.getLogger(__name__)
 
 class IsAdminOrReadOnly(permissions.BasePermission):
     """Permission personnalisée pour permettre uniquement aux administrateurs de modifier"""
@@ -124,11 +127,20 @@ class InitiatePaymentView(generics.GenericAPIView):
     permission_classes = [IsAuthenticated]
     
     def post(self, request):
+        logger.info("Début de l'initialisation du paiement")
+        logger.info(f"Données reçues: {request.data}")
+        
         serializer = self.get_serializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
+        
+        if not serializer.is_valid():
+            logger.error(f"Erreurs de validation: {serializer.errors}")
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        
+        logger.info("Données validées avec succès")
         
         try:
             payment = serializer.save()
+            logger.info(f"Paiement créé avec succès: {payment.id}")
             
             return Response({
                 "message": "Paiement initié avec succès",
@@ -140,8 +152,9 @@ class InitiatePaymentView(generics.GenericAPIView):
                     "authorization_url": payment.authorization_url
                 }
             }, status=status.HTTP_201_CREATED)
-        except serializers.ValidationError as e:
-            return Response(e.detail, status=status.HTTP_400_BAD_REQUEST)
+        except Exception as e:
+            logger.exception(f"Exception lors de la création du paiement: {str(e)}")
+            return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
 class VerifyPaymentView(generics.GenericAPIView):
     """API pour vérifier le statut d'un paiement"""
@@ -161,21 +174,31 @@ class VerifyPaymentView(generics.GenericAPIView):
                 status=status.HTTP_403_FORBIDDEN
             )
         
+        # Utiliser la référence NotchPay si elle existe, sinon utiliser la référence interne
+        payment_reference = payment.notchpay_reference or payment.reference
+        
+        # Log détaillé pour débogage
+        logger.info(f"Vérification du paiement - ID: {payment.id}, Référence: {payment.reference}, Référence NotchPay: {payment.notchpay_reference}")
+        
         # Vérifier le statut du paiement via l'API Notch Pay
         notchpay_service = NotchPayService()
-        payment_status = notchpay_service.verify_payment(payment.reference)
+        payment_status = notchpay_service.verify_payment(payment_reference)
         
         if 'error' in payment_status:
+            logger.error(f"Erreur lors de la vérification du paiement: {payment_status}")
             return Response(
                 {"error": f"Erreur lors de la vérification du paiement: {payment_status.get('message', 'Erreur inconnue')}"},
                 status=status.HTTP_400_BAD_REQUEST
             )
         
+        # Log détaillé de la réponse pour débogage
+        logger.info(f"Réponse de vérification du paiement: {payment_status}")
+        
         # Mettre à jour le statut du paiement
         transaction_data = payment_status.get('transaction', {})
         payment_status_value = transaction_data.get('status')
         
-        if payment_status_value == 'success':
+        if payment_status_value == 'success' or payment_status_value == 'complete':
             # Paiement réussi
             payment.status = 'SUCCESS'
             payment.transaction_date = timezone.now()
@@ -254,6 +277,9 @@ class CancelSubscriptionView(generics.GenericAPIView):
 def payment_callback(request):
     """Webhook pour recevoir les callbacks de Notch Pay"""
     
+    logger.info(f"Callback reçu - Headers: {request.headers}")
+    logger.info(f"Callback reçu - Body: {request.body}")
+    
     # Récupérer les données du callback
     try:
         data = json.loads(request.body)
@@ -262,6 +288,7 @@ def payment_callback(request):
         reference = data.get('reference') or data.get('trxref')
         
         if not reference:
+            logger.error("Référence de paiement non trouvée dans le callback")
             return HttpResponse(status=400)
         
         # Récupérer le paiement correspondant
@@ -276,6 +303,7 @@ def payment_callback(request):
             
             # Vérifier le statut du paiement
             status_value = data.get('status')
+            logger.info(f"Statut du paiement: {status_value}")
             
             if status_value == 'success':
                 # Paiement réussi
@@ -320,9 +348,11 @@ def payment_callback(request):
             return HttpResponse(status=200)
         
         except Payment.DoesNotExist:
+            logger.error(f"Paiement non trouvé pour la référence: {reference}")
             return HttpResponse(status=404)
     
     except json.JSONDecodeError:
+        logger.error("Impossible de décoder le JSON du callback")
         return HttpResponse(status=400)
 
 @api_view(['GET'])

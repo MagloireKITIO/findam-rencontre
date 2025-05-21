@@ -7,7 +7,8 @@ from django.contrib.auth import get_user_model
 
 from .models import SubscriptionPlan, Subscription, Payment, PaymentCallback
 from .services import NotchPayService
-
+import logging
+logger = logging.getLogger(__name__)
 User = get_user_model()
 
 class SubscriptionPlanSerializer(serializers.ModelSerializer):
@@ -70,14 +71,17 @@ class InitiatePaymentSerializer(serializers.Serializer):
         payment_method = attrs.get('payment_method')
         phone_number = attrs.get('phone_number')
         
+        logger.info(f"Validation du paiement: {payment_method}, {phone_number}")
+        
         # Vérifier que le numéro de téléphone est fourni pour Mobile Money
         if payment_method in ['CM_MOBILE', 'CM_MTN', 'CM_ORANGE'] and not phone_number:
+            logger.error(f"Numéro de téléphone manquant pour {payment_method}")
             raise serializers.ValidationError(
                 {"phone_number": "Le numéro de téléphone est requis pour le paiement mobile."}
             )
         
         return attrs
-    
+
     def create(self, validated_data):
         request = self.context.get('request')
         user = request.user
@@ -119,8 +123,12 @@ class InitiatePaymentSerializer(serializers.Serializer):
             description=description
         )
         
+        # Logger la réponse
+        logger.info(f"Réponse de Notch Pay: {payment_response}")
+        
         if 'error' in payment_response:
             # Échec de l'initialisation du paiement
+            logger.error(f"Échec de l'initialisation du paiement: {payment_response}")
             payment.status = 'FAILED'
             payment.save()
             
@@ -134,9 +142,13 @@ class InitiatePaymentSerializer(serializers.Serializer):
         
         # Mettre à jour le paiement avec les informations de Notch Pay
         transaction_data = payment_response.get('transaction', {})
-        payment.notchpay_reference = transaction_data.get('reference')
+        notchpay_reference = transaction_data.get('reference')  # IMPORTANT: C'est la référence NotchPay
+        
+        payment.notchpay_reference = notchpay_reference
         payment.authorization_url = payment_response.get('authorization_url')
         payment.save()
+        
+        logger.info(f"Référence interne: {payment_reference}, Référence NotchPay: {notchpay_reference}")
         
         # Si c'est un paiement mobile, le traiter immédiatement
         if payment_method in ['CM_MOBILE', 'CM_MTN', 'CM_ORANGE']:
@@ -146,14 +158,20 @@ class InitiatePaymentSerializer(serializers.Serializer):
             elif payment_method == 'CM_ORANGE':
                 channel = 'cm.orange'
             
+            logger.info(f"Traitement du paiement mobile: {channel}, {phone_number}")
+            
+            # IMPORTANT: Utiliser la référence NotchPay, pas notre référence interne
             mobile_response = notchpay_service.process_mobile_payment(
-                payment_reference=payment_reference,
+                payment_reference=notchpay_reference,  # Utiliser la référence NotchPay
                 phone_number=phone_number,
                 channel=channel
             )
             
+            logger.info(f"Réponse du paiement mobile: {mobile_response}")
+            
             if 'error' in mobile_response:
                 # Échec du traitement du paiement mobile
+                logger.error(f"Échec du traitement du paiement mobile: {mobile_response}")
                 payment.status = 'FAILED'
                 payment.save()
                 
@@ -165,6 +183,7 @@ class InitiatePaymentSerializer(serializers.Serializer):
                     {"payment": f"Échec du traitement du paiement mobile: {mobile_response.get('message', 'Erreur inconnue')}"}
                 )
         
+        logger.info(f"Paiement initialisé avec succès: {payment.id}")
         return payment
 
 class VerifyPaymentSerializer(serializers.Serializer):
@@ -173,14 +192,19 @@ class VerifyPaymentSerializer(serializers.Serializer):
     def validate(self, attrs):
         payment_reference = attrs.get('payment_reference')
         
-        try:
-            payment = Payment.objects.get(reference=payment_reference)
-            attrs['payment'] = payment
-        except Payment.DoesNotExist:
+        # Chercher d'abord par référence
+        payment = Payment.objects.filter(reference=payment_reference).first()
+        
+        # Si non trouvé, chercher par référence NotchPay
+        if not payment:
+            payment = Payment.objects.filter(notchpay_reference=payment_reference).first()
+        
+        if not payment:
             raise serializers.ValidationError(
                 {"payment_reference": "Paiement non trouvé."}
             )
         
+        attrs['payment'] = payment
         return attrs
 
 class CancelSubscriptionSerializer(serializers.Serializer):
